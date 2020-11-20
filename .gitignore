@@ -1,1 +1,6 @@
-crack_ckey_test
+intel_aes.o
+crackbtcshell.o
+iaesx64.o
+do_rdtsc.o
+crackbtcshell
+

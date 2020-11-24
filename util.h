@@ -1,3 +1,10 @@
+typedef union	union_INT256	{
+	char lineal[32];
+	uint64_t number64[4];
+	uint32_t number32[8];
+	uint16_t number16[16];
+}INT256;
+
 typedef struct str_list	{
 	int n;
 	char **data;
@@ -181,7 +188,7 @@ void addItemList(char *data, List *l)	{
 	*/
 	l->data = realloc(l->data,sizeof(char*) * (l->n +1));
 	//printf("l->data : %p\n",l->data);
-	
+
 	//printf("data : %p\n",data);
 	l->data[l->n] = data;
 	//printf("l->data[%i] : %p: %s\n",l->n,l->data[l->n],l->data[l->n]);

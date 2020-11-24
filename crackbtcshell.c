@@ -24,9 +24,14 @@ https://github.com/amiralis/libaesni
 #define CPUMODE_AESNI 1
 #define CPUMODE_LEGACY 2
 
+#define CRACKMODE_RANDOM 1
+#define CRACKMODE_MIXED 2
+
 //void intHandler(int dummy);
 void *thread_process_legacy(void *vargp);
+void *thread_process_legacy_mixed(void *vargp);
 void *thread_process(void *vargp);
+void *thread_process_mixed(void *vargp);
 void *thread_timer(void *vargp);
 
 void tryKey(char *key);
@@ -35,7 +40,7 @@ void tryKey_legacy(char *key);
   the padding must by constant and NOT NEED TO BE CHANGE
 */
 const unsigned char *padding = (const unsigned char *)"\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10";
-const char *version = "0.1.20211123";
+const char *version = "0.1.20211124";
 
 /*Global Values*/
 
@@ -56,10 +61,11 @@ int STATUS = 0;
 int QUIET = 0;
 int RANDOMSOURCE = 0;
 int CPUMODE;
+int CRACKMODE = 0;
 
 const char *commands1[8] = {"start","pause","continue","stats","exit","about","help","version"};
 const char *commands3[3] = {"load","set","try"};
-const char *params_set[5] = {"threads","randombuffer","debugcount","quiet","randomsource"};
+const char *params_set[6] = {"threads","randombuffer","debugcount","quiet","randomsource","crackmode"};
 const char *params_load[3] = {"ckey","mkey","file"};
 
 List ckeys_list;
@@ -81,7 +87,7 @@ int main()  {
   else  {
     CPUMODE = CPUMODE_AESNI;
   }
-
+  CRACKMODE = CRACKMODE_RANDOM;
   memset(&ckeys_list,0,sizeof(List));
   seconds = 0;
   line = malloc(1024);
@@ -155,71 +161,85 @@ int main()  {
           token = nextToken(&t);
           aux = nextToken(&t);
           param = strtol(aux,NULL,10);
-          switch(indexOf(token,params_set,5))  {
-			  case 0: //threads
-				if(param > 0 && param < 32) {
-				  NTHREADS = param;
-				}else  {
-				  printf("Invalid threads number\n");
-				}
-			  break;
-			  case 1: //randombuffer
-				if(param > 31 && param < 1024*1024) {
-				  RANDOMLEN = param;
-				  RANDOMLENFOR = param - 32;
-				}else  {
-				  printf("Invalid bufferlengt number\n");
-				}
-			  break;
-			  case 2: //debugcount
-				if(param > 0) {
-				  DEBUGCOUNT = param;
-				}else  {
-				  printf("Invalid bufferlengt number\n");
-				}
-			  break;
-			  case 3: //QUIET
-				  QUIET = param;
-			  break;
-			  case 4: //Random Source
-				  RANDOMSOURCE = param;
-			  break;
-
-			  default:
-				printf("Unknow value %s\n",token);
-			  break;
-          }
-        break;
-        case 2: //TRY
-          token = nextToken(&t);
-          aux = nextToken(&t);
-          if(strlen(aux) == 64)  {
-      			if(isValidHex(aux))  {
-      			  temp = (char*) malloc(32);
-      			  hexs2bin(aux,(unsigned char*)temp);
-              switch(CPUMODE) {
-                case CPUMODE_AESNI:
-                  tryKey(temp);
-                break;
-                case CPUMODE_LEGACY:
-                  tryKey_legacy(temp);
-                break;
+          switch(indexOf(token,params_set,6))  {
+    			  case 0: //threads
+    				if(param > 0 && param < 32) {
+    				  NTHREADS = param;
+    				}else  {
+    				  printf("Invalid threads number\n");
+    				}
+    			  break;
+    			  case 1: //randombuffer
+    				if(param > 31 && param < 1024*1024) {
+    				  RANDOMLEN = param;
+    				  RANDOMLENFOR = param - 32;
+    				}else  {
+    				  printf("Invalid bufferlengt number\n");
+    				}
+    			  break;
+    			  case 2: //debugcount
+    				if(param > 0) {
+    				  DEBUGCOUNT = param;
+    				}else  {
+    				  printf("Invalid bufferlengt number\n");
+    				}
+    			  break;
+    			  case 3: //QUIET
+    				  QUIET = param;
+    			  break;
+    			  case 4: //Random Source
+    				  RANDOMSOURCE = param;
+    			  break;
+            case 5: //CRACKMODE
+              if(strcmp(aux,"random") == 0)  {
+                CRACKMODE = CRACKMODE_RANDOM;
+                printf("Setting mode %s\n",aux);
               }
-      			  free(temp);
-      			}
-      			else  {
-      			  printf("Invalid hex string :%s\n",aux);
-      			}
-          }
-          else  {
-              printf("Invalid length\n");
+              else  {
+                if(strcmp(aux,"mixed") == 0) {
+                  CRACKMODE = CRACKMODE_MIXED;
+                  printf("Setting mode %s\n",aux);
+                }
+                else  {
+                    printf("Unknow mode %s\n",aux);
+                }
+              }
+            break;
+    			  default:
+    				    printf("Unknow value %s\n",token);
+    			  break;
           }
         break;
-        default:
-          printf("Unknow command %s\n",token);
-        break;
+          case 2: //TRY
+            token = nextToken(&t);
+            aux = nextToken(&t);
+            if(strlen(aux) == 64)  {
+        			if(isValidHex(aux))  {
+        			  temp = (char*) malloc(32);
+        			  hexs2bin(aux,(unsigned char*)temp);
+                switch(CPUMODE) {
+                  case CPUMODE_AESNI:
+                    tryKey(temp);
+                  break;
+                  case CPUMODE_LEGACY:
+                    tryKey_legacy(temp);
+                  break;
+                }
+        			  free(temp);
+        			}
+        			else  {
+        			  printf("Invalid hex string :%s\n",aux);
+        			}
+            }
+            else  {
+                printf("Invalid length\n");
+            }
+          break;
+          default:
+            printf("Unknow command %s\n",token);
+          break;
         }
-      break;
+        break;
       /*
         start
         pause
@@ -258,10 +278,24 @@ int main()  {
       				tothread[0] = i;
               switch(CPUMODE) {
                 case CPUMODE_AESNI:
-                  s = pthread_create(&tid[i],NULL,thread_process,(void *)tothread);
+                  switch(CRACKMODE) {
+                    case CRACKMODE_RANDOM:
+                      s = pthread_create(&tid[i],NULL,thread_process,(void *)tothread);
+                    break;
+                    case CRACKMODE_MIXED:
+                      s = pthread_create(&tid[i],NULL,thread_process_mixed,(void *)tothread);
+                    break;
+                  }
                 break;
                 case CPUMODE_LEGACY:
-                  s = pthread_create(&tid[i],NULL,thread_process_legacy,(void *)tothread);
+                  switch(CRACKMODE) {
+                    case CRACKMODE_RANDOM:
+                      s = pthread_create(&tid[i],NULL,thread_process_legacy,(void *)tothread);
+                    break;
+                    case CRACKMODE_MIXED:
+                      s = pthread_create(&tid[i],NULL,thread_process_legacy_mixed,(void *)tothread);
+                    break;
+                  }
                 break;
               }
       				if(s != 0)  {
@@ -355,7 +389,7 @@ void *thread_process(void *vargp)  {
     fread(random_buffer,1,RANDOMLEN,devurandom);
 
     pthread_mutex_unlock(&read_random);
-    for(i = 0; i < RANDOMLENFOR && entrar && !found ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
 
       key_material = random_buffer+i;
 	  /*
@@ -415,7 +449,7 @@ void *thread_process(void *vargp)  {
       }
 
     }  //end While
-  }while(entrar && !found);
+  }while(entrar);
   free(decipher_key);
   pthread_exit(NULL);
 }
@@ -497,7 +531,7 @@ void *thread_process_legacy(void *vargp)  {
     fread(random_buffer,1,RANDOMLEN,devurandom);
     pthread_mutex_unlock(&read_random);
 
-    for(i = 0; i < RANDOMLENFOR && entrar && !found ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
 
       key_material = random_buffer+i;
 	     /*
@@ -538,7 +572,182 @@ void *thread_process_legacy(void *vargp)  {
         count++;
       }
     }  //end While
-  }while(entrar && !found);
+  }while(entrar);
+  free(decipher_key);
+  pthread_exit(NULL);
+}
+
+
+
+/*
+  random-secuential crack thread
+*/
+void *thread_process_mixed(void *vargp)  {
+  DEFINE_ROUND_KEYS
+  sAesData aesData;
+  uint64_t count;
+  INT256 my256int;
+  FILE *file_output;
+  int *aux = (int *)vargp;
+  int thread_number,entrar,i,j;
+  char *decipher_key = NULL,*key_material,*random_buffer,*temp;
+  thread_number = aux[0];
+
+  decipher_key = (char *) malloc(48);
+  random_buffer = (char *) malloc(RANDOMLEN);
+
+  /* Custom aesData to save some critical steps in ASM */
+  aesData.expanded_key = expandedKey;
+  aesData.num_blocks = 1;
+  aesData.out_block = (unsigned char *)decipher_key;
+
+
+  steps[thread_number] = 0;
+  count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
+  entrar = 1;
+  do{
+    pthread_mutex_lock(&read_random);
+    fread(random_buffer,1,RANDOMLEN,devurandom);
+
+    pthread_mutex_unlock(&read_random);
+    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+      key_material = random_buffer+i;
+      memcpy(my256int.lineal,key_material,32);
+      my256int.number32[0] = 0;
+
+      do {
+  	    /*
+          We are recycled the expandedKey to use it with many ckeys or mkeys as possible this proccess also save a lot of CPU power
+        */
+        iDecExpandKey256((unsigned char*)my256int.lineal,expandedKey);
+        for(j = 0; j < ckeys_list.n; j++){
+          if(count % DEBUGCOUNT  == 0 )  {
+    		  steps[thread_number]++;  //This is just for the stats information
+      		  if(!QUIET){
+      			  temp = tohex((char*)my256int.lineal,32);
+      			  printf("Thread %i, current Key: %s\n",thread_number,temp);
+      			  free(temp);
+      		  }
+
+          }
+          /*
+          We have a three cipher blocks : C = [C0, C1, C2]
+          We only need decrypt the last block of cipher text, in this case is C2
+          The IV in this case is the previous block, in this case is C1
+
+          Decipher text should be equals to padding [0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10] if not, the key tested is incorrect
+
+           C1 is from 0 to 15
+           C2 is from 16 to 31
+           C3 is from 31 to 47
+
+           We only do one single block Decrypt per Mkey or Ckey instead of 3 decrypts, this save a lot of CPU power
+          */
+
+
+          aesData.in_block = (unsigned char *)ckeys_list.data[j]+32;  //C3
+          aesData.iv = (unsigned char *)ckeys_list.data[j]+16;    //C2
+          // For CBC the previous cipher block is our IV except for the C1 Block in this case the IV is the Orignal IV,
+
+
+          imyDec256_CBC(&aesData);  //Custom function dont use this for more than one Cipher block
+
+          if(memcmp(decipher_key,padding,16) == 0 )  {
+            printf("Posible Key found\n");
+            file_output = fopen("./key_found.txt","wb");
+            temp = tohex(key_material,32);
+            printf("Thread %i key_material: %s\n",thread_number,temp);
+            fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
+            free(temp);
+            temp = tohex(ckeys_list.data[j],48);
+            fprintf(file_output,"Thread %i cipher_texts: %s\n",thread_number,temp);
+            free(temp);
+            fclose(file_output);
+            found = 1;
+            entrar = 0;
+          }
+          count++;
+        }
+        my256int.number32[0]++;
+      }while(my256int.number32[0] != 0 && entrar);
+
+    }  //end While
+  }while(entrar);
+  free(decipher_key);
+  pthread_exit(NULL);
+}
+
+
+void *thread_process_legacy_mixed(void *vargp)  {
+  AES256_ctx ctx;
+  uint64_t count;
+  INT256 my256int;
+  FILE *file_output;
+  int *aux = (int *)vargp;
+  int thread_number,entrar,i,j,k;
+  char *decipher_key = NULL,*key_material,*random_buffer,*temp,*iv;
+  thread_number = aux[0];
+
+  decipher_key = (char *) malloc(16);
+  random_buffer = (char *) malloc(RANDOMLEN);
+
+  steps[thread_number] = 0;
+  count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
+  entrar = 1;
+  do{
+    pthread_mutex_lock(&read_random);
+    fread(random_buffer,1,RANDOMLEN,devurandom);
+    pthread_mutex_unlock(&read_random);
+
+    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+
+      key_material = random_buffer+i;
+      memcpy(my256int.lineal,key_material,32);
+      my256int.number32[0] = 0;
+
+      do {
+
+  	     /*
+          We are recycled the key_material to use it with many ckeys or mkeys as possible this proccess also save a lot of CPU power
+        */
+        AES256_init(&ctx,(const unsigned char*) my256int.lineal);
+
+        for(j = 0; j < ckeys_list.n; j++){
+          if(count % DEBUGCOUNT  == 0 )  {
+      		  steps[thread_number]++;  //This is just for the stats information
+      		  if(!QUIET){
+      			  temp = tohex(my256int.lineal,32);
+      			  printf("Thread %i, current Key: %s\n",thread_number,temp);
+      			  free(temp);
+      		  }
+          }
+
+          iv = ckeys_list.data[j]+16;
+          AES256_decrypt(&ctx, 1,( unsigned char *) decipher_key,(const unsigned char *) ckeys_list.data[j]+32);
+          for (k = 0; k != AES_BLOCKSIZE; k++){
+            decipher_key[k] ^= iv[k];
+          }
+
+          if(memcmp(decipher_key,padding,16) == 0 )  {
+            printf("Posible Key found\n");
+            file_output = fopen("./key_found.txt","wb");
+            temp = tohex(key_material,32);
+            printf("Thread %i key_material: %s\n",thread_number,temp);
+            fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
+            free(temp);
+            temp = tohex(ckeys_list.data[j],48);
+            fprintf(file_output,"Thread %i cipher_texts: %s\n",thread_number,temp);
+            free(temp);
+            fclose(file_output);
+            found = 1;
+            entrar = 0;
+          }
+          count++;
+        }
+        my256int.number32[0]++;
+      }while( my256int.number32[0] != 0 && entrar);
+    }  //end While
+  }while(entrar);
   free(decipher_key);
   pthread_exit(NULL);
 }

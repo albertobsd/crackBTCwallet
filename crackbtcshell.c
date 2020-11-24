@@ -83,7 +83,6 @@ int main()  {
   }
 
   memset(&ckeys_list,0,sizeof(List));
-
   seconds = 0;
   line = malloc(1024);
   salir = 0;
@@ -198,7 +197,14 @@ int main()  {
       			if(isValidHex(aux))  {
       			  temp = (char*) malloc(32);
       			  hexs2bin(aux,(unsigned char*)temp);
-      			  tryKey(temp);
+              switch(CPUMODE) {
+                case CPUMODE_AESNI:
+                  tryKey(temp);
+                break;
+                case CPUMODE_LEGACY:
+                  tryKey_legacy(temp);
+                break;
+              }
       			  free(temp);
       			}
       			else  {

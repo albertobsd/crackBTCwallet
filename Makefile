@@ -2,6 +2,11 @@ default:  libaesni
 	gcc -Wall -O3 -fPIC -c ctaes/ctaes.c -o ctaes.o
 	gcc -Wall -c crackbtcshell.c -o crackbtcshell.o
 	gcc -o crackbtcshell intel_aes.o crackbtcshell.o ctaes.o iaesx64.o do_rdtsc.o -pthread
+
+noaesni:
+	gcc -Wall -O3 -fPIC -c ctaes/ctaes.c -o ctaes.o
+	gcc -Wall -c crackbtcshell_noaesni.c -o crackbtcshell.o
+	gcc -o crackbtcshell crackbtcshell.o ctaes.o -pthread
 clean:
 	rm *.o
 	rm crackbtcshell

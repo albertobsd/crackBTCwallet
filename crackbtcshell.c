@@ -79,7 +79,7 @@ int main()  {
     CPUMODE = CPUMODE_LEGACY;
   }
   else  {
-    CPUMODE = CPUMODE_LEGACY;
+    CPUMODE = CPUMODE_AESNI;
   }
 
   memset(&ckeys_list,0,sizeof(List));

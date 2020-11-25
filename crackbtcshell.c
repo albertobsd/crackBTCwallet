@@ -54,6 +54,9 @@ unsigned int *steps = NULL;
 
 int seconds = 0;
 pthread_mutex_t read_random;
+pthread_mutex_t write_mixed16;
+pthread_mutex_t write_mixed32;
+
 
 int DEBUGCOUNT = 0x100000;
 int NTHREADS = 3;
@@ -675,11 +678,13 @@ void *thread_process_mixed(void *vargp)  {
         }
         my256int.number32[0]++;
       }while(my256int.number32[0] != 0 && entrar);
+      pthread_mutex_lock(&write_mixed32);
       file_log32 = fopen("tested32.bin","ab+");
       if(file_log32 != NULL)  {
         fwrite(my256int.lineal,1,32,file_log32);
         fclose(file_log32);
       }
+      pthread_mutex_lock(&write_mixed32);
     }  //end While
   }while(entrar);
   free(decipher_key);
@@ -861,11 +866,13 @@ void *thread_process_mixed16(void *vargp)  {
           }
           my256int.number16[k]++;
         }while(my256int.number16[k] != 0 && entrar);
+        pthread_mutex_lock(&write_mixed16);
         file_log16 = fopen("tested16.bin","ab+");
         if(file_log16 != NULL)  {
           fwrite(my256int.lineal,1,32,file_log16);
           fclose(file_log16);
         }
+        pthread_mutex_unlock(&write_mixed16);
       }
 
     }  //end While

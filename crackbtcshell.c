@@ -201,6 +201,10 @@ int main()  {
                 CRACKMODE = CRACKMODE_MIXED;
                 printf("Setting mode %s\n",aux);
               }
+              if(strcmp(aux,"mixed16") == 0) {
+                CRACKMODE = CRACKMODE_MIXED16;
+                printf("Setting mode %s\n",aux);
+              }
             break;
     			  default:
     				    printf("Unknow value %s\n",token);
@@ -281,6 +285,9 @@ int main()  {
                     break;
                     case CRACKMODE_MIXED:
                       s = pthread_create(&tid[i],NULL,thread_process_mixed,(void *)tothread);
+                    break;
+                    case CRACKMODE_MIXED16:
+                      s = pthread_create(&tid[i],NULL,thread_process_mixed16,(void *)tothread);
                     break;
                   }
                 break;
@@ -669,7 +676,7 @@ void *thread_process_mixed(void *vargp)  {
         my256int.number32[0]++;
       }while(my256int.number32[0] != 0 && entrar);
       file_log32 = fopen("tested32.bin","ab+");
-      if(file_log16 != NULL)  {
+      if(file_log32 != NULL)  {
         fwrite(my256int.lineal,1,32,file_log32);
         fclose(file_log32);
       }

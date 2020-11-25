@@ -26,12 +26,14 @@ https://github.com/amiralis/libaesni
 
 #define CRACKMODE_RANDOM 1
 #define CRACKMODE_MIXED 2
+#define CRACKMODE_MIXED16 3
 
 //void intHandler(int dummy);
 void *thread_process_legacy(void *vargp);
 void *thread_process_legacy_mixed(void *vargp);
 void *thread_process(void *vargp);
 void *thread_process_mixed(void *vargp);
+void *thread_process_mixed16(void *vargp);
 void *thread_timer(void *vargp);
 
 void tryKey(char *key);
@@ -40,7 +42,7 @@ void tryKey_legacy(char *key);
   the padding must by constant and NOT NEED TO BE CHANGE
 */
 const unsigned char *padding = (const unsigned char *)"\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10";
-const char *version = "0.1.20211124";
+const char *version = "0.1.20211125";
 
 /*Global Values*/
 
@@ -163,7 +165,7 @@ int main()  {
           param = strtol(aux,NULL,10);
           switch(indexOf(token,params_set,6))  {
     			  case 0: //threads
-    				if(param > 0 && param < 32) {
+    				if(param > 0 && param <= 64) {  /* Can anyone need more than 64 threads?*/
     				  NTHREADS = param;
     				}else  {
     				  printf("Invalid threads number\n");
@@ -195,14 +197,9 @@ int main()  {
                 CRACKMODE = CRACKMODE_RANDOM;
                 printf("Setting mode %s\n",aux);
               }
-              else  {
-                if(strcmp(aux,"mixed") == 0) {
-                  CRACKMODE = CRACKMODE_MIXED;
-                  printf("Setting mode %s\n",aux);
-                }
-                else  {
-                    printf("Unknow mode %s\n",aux);
-                }
+              if(strcmp(aux,"mixed") == 0) {
+                CRACKMODE = CRACKMODE_MIXED;
+                printf("Setting mode %s\n",aux);
               }
             break;
     			  default:
@@ -587,9 +584,9 @@ void *thread_process_mixed(void *vargp)  {
   sAesData aesData;
   uint64_t count;
   INT256 my256int;
-  FILE *file_output;
+  FILE *file_output,*file_log32;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j;
+  int thread_number,entrar,i,j,k;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp;
   thread_number = aux[0];
 
@@ -612,9 +609,10 @@ void *thread_process_mixed(void *vargp)  {
     pthread_mutex_unlock(&read_random);
     for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
       key_material = random_buffer+i;
+
+      //for(k = 0; k < 8 ;  k++)  {
       memcpy(my256int.lineal,key_material,32);
       my256int.number32[0] = 0;
-
       do {
   	    /*
           We are recycled the expandedKey to use it with many ckeys or mkeys as possible this proccess also save a lot of CPU power
@@ -670,7 +668,11 @@ void *thread_process_mixed(void *vargp)  {
         }
         my256int.number32[0]++;
       }while(my256int.number32[0] != 0 && entrar);
-
+      file_log32 = fopen("tested32.bin","ab+");
+      if(file_log16 != NULL)  {
+        fwrite(my256int.lineal,1,32,file_log32);
+        fclose(file_log32);
+      }
     }  //end While
   }while(entrar);
   free(decipher_key);
@@ -746,6 +748,119 @@ void *thread_process_legacy_mixed(void *vargp)  {
         }
         my256int.number32[0]++;
       }while( my256int.number32[0] != 0 && entrar);
+    }  //end While
+  }while(entrar);
+  free(decipher_key);
+  pthread_exit(NULL);
+}
+
+
+/*
+  random-secuential crack thread
+  but only secuential each 16 bits
+  [] <- 16 bits random data
+  [X] <- 16 bits secuential search
+  [X][][][][][][][][][][][][][][][]
+  [][X][][][][][][][][][][][][][][]
+  [][][X][][][][][][][][][][][][][]
+  etc...
+  [][][][][][][][][][][][][][][][X]
+*/
+void *thread_process_mixed16(void *vargp)  {
+  DEFINE_ROUND_KEYS
+  sAesData aesData;
+  uint64_t count;
+  INT256 my256int;
+  FILE *file_output,*file_log16;
+  int *aux = (int *)vargp;
+  int thread_number,entrar,i,j,k;
+  char *decipher_key = NULL,*key_material,*random_buffer,*temp;
+  thread_number = aux[0];
+
+  decipher_key = (char *) malloc(48);
+  random_buffer = (char *) malloc(RANDOMLEN);
+
+  /* Custom aesData to save some critical steps in ASM */
+  aesData.expanded_key = expandedKey;
+  aesData.num_blocks = 1;
+  aesData.out_block = (unsigned char *)decipher_key;
+
+
+  steps[thread_number] = 0;
+  count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
+  entrar = 1;
+  do{
+    pthread_mutex_lock(&read_random);
+    fread(random_buffer,1,RANDOMLEN,devurandom);
+
+    pthread_mutex_unlock(&read_random);
+    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+      key_material = random_buffer+i;
+      for(k = 0; k < 16 && entrar;k++) {
+        memcpy(my256int.lineal,key_material,32);
+        my256int.number16[k] = 0;
+        do {
+    	    /*
+            We are recycled the expandedKey to use it with many ckeys or mkeys as possible this proccess also save a lot of CPU power
+          */
+          iDecExpandKey256((unsigned char*)my256int.lineal,expandedKey);
+          for(j = 0; j < ckeys_list.n; j++){
+            if(count % DEBUGCOUNT  == 0 )  {
+      		  steps[thread_number]++;  //This is just for the stats information
+        		  if(!QUIET){
+        			  temp = tohex((char*)my256int.lineal,32);
+        			  printf("Thread %i, current Key: %s\n",thread_number,temp);
+        			  free(temp);
+        		  }
+
+            }
+            /*
+            We have a three cipher blocks : C = [C0, C1, C2]
+            We only need decrypt the last block of cipher text, in this case is C2
+            The IV in this case is the previous block, in this case is C1
+
+            Decipher text should be equals to padding [0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10] if not, the key tested is incorrect
+
+             C1 is from 0 to 15
+             C2 is from 16 to 31
+             C3 is from 31 to 47
+
+             We only do one single block Decrypt per Mkey or Ckey instead of 3 decrypts, this save a lot of CPU power
+            */
+
+
+            aesData.in_block = (unsigned char *)ckeys_list.data[j]+32;  //C3
+            aesData.iv = (unsigned char *)ckeys_list.data[j]+16;    //C2
+            // For CBC the previous cipher block is our IV except for the C1 Block in this case the IV is the Orignal IV,
+
+
+            imyDec256_CBC(&aesData);  //Custom function dont use this for more than one Cipher block
+
+            if(memcmp(decipher_key,padding,16) == 0 )  {
+              printf("Posible Key found\n");
+              file_output = fopen("./key_found.txt","wb");
+              temp = tohex(key_material,32);
+              printf("Thread %i key_material: %s\n",thread_number,temp);
+              fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
+              free(temp);
+              temp = tohex(ckeys_list.data[j],48);
+              fprintf(file_output,"Thread %i cipher_texts: %s\n",thread_number,temp);
+              free(temp);
+              fclose(file_output);
+              found = 1;
+              entrar = 0;
+            }
+            count++;
+          }
+          my256int.number16[k]++;
+        }while(my256int.number16[k] != 0 && entrar);
+        file_log16 = fopen("tested16.bin","ab+");
+        if(file_log16 != NULL)  {
+          fwrite(my256int.lineal,1,32,file_log16);
+          fclose(file_log16);
+        }
+      }
+
     }  //end While
   }while(entrar);
   free(decipher_key);

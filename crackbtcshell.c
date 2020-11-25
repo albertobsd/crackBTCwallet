@@ -684,7 +684,7 @@ void *thread_process_mixed(void *vargp)  {
         fwrite(my256int.lineal,1,32,file_log32);
         fclose(file_log32);
       }
-      pthread_mutex_lock(&write_mixed32);
+      pthread_mutex_unlock(&write_mixed32);
     }  //end While
   }while(entrar);
   free(decipher_key);

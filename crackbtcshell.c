@@ -49,7 +49,7 @@ bool custom_sha256_for_libbase58(void *digest, const void *data, size_t datasz);
   the padding must by constant and NOT NEED TO BE CHANGE
 */
 const unsigned char *padding = (const unsigned char *)"\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10";
-const char *version = "0.1.20211125";
+const char *version = "0.1.20201203";
 
 /*Global Values*/
 

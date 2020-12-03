@@ -1,11 +1,4 @@
-intel_aes.o
-crackbtcshell.o
-iaesx64.o
-do_rdtsc.o
-ctaes.o
-crackbtcshell
+AlbertoBSD.dat
+newwallet.dat
+ctaes.cu
 load.txt
-test.txt
-800btc.dat
-wallet.dat
-blk00000.dat

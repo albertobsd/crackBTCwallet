@@ -14,6 +14,7 @@ typedef struct str_list	{
 typedef struct str_tokenizer	{
 	int current;
 	int n;
+	char *copydata;
 	char **tokens;
 }Tokenizer;
 
@@ -91,11 +92,20 @@ int hasMoreTokens(Tokenizer *t)	{
 void stringtokenizer(char *data,Tokenizer *t)	{
 	//printf("stringtokenizer\n");
 	char *token;
+	int len;
 	t->tokens = NULL;
 	t->n = 0;
 	t->current = 0;
-	trim(data,"\t\n\r ");
-	token = strtok(data," ");
+	t->copydata = NULL;
+	len = strlen(data);
+	t->copydata = (char *) malloc(len+1);
+	if(t->copydata == NULL)	{
+		printf("Out of memory\n");
+		exit(0);
+	}
+	memcpy(t->copydata,data,len+1);
+	trim(t->copydata,"\t\n\r ");
+	token = strtok(t->copydata," ");
 	while(token != NULL)	{
 		t->tokens = realloc(t->tokens,sizeof(char*)*(t->n+1));
 		if(t->tokens == NULL)	{
@@ -110,14 +120,14 @@ void stringtokenizer(char *data,Tokenizer *t)	{
 }
 
 void freetokenizer(Tokenizer *t)	{
-	//printf("freetokenizer\n");
-	/*
 	if(t->n > 0)	{
+		memset(t->tokens,0,sizeof(char*)*t->n );
 		free(t->tokens);
 	}
-	*/
+	if(t->copydata != NULL)	{
+		free(t->copydata);
+	}
 	memset(t,0,sizeof(struct str_tokenizer));
-	//printf("freetokenizer\n");
 }
 
 

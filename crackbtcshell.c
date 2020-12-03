@@ -1,5 +1,4 @@
 /*
-
 develop by Luis Alberto
 email: alberto.bsd@gmail.com
 
@@ -12,12 +11,16 @@ https://github.com/amiralis/libaesni
 #include "libaesni_custom/iaesni.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
 #include "util.h"
 #include "ctaes/ctaes.h"
+#include "sha512.h"
+#include "sha256.h"
+#include "libbase58.h"
 
 #define AES_BLOCKSIZE 16
 
@@ -28,7 +31,6 @@ https://github.com/amiralis/libaesni
 #define CRACKMODE_MIXED 2
 #define CRACKMODE_MIXED16 3
 
-//void intHandler(int dummy);
 void *thread_process_legacy(void *vargp);
 void *thread_process_legacy_mixed(void *vargp);
 void *thread_process(void *vargp);
@@ -38,6 +40,11 @@ void *thread_timer(void *vargp);
 
 void tryKey(char *key);
 void tryKey_legacy(char *key);
+void printusage();
+
+char *BytesToKeySHA512AES(char *salt,  char *passphrase,int count, int length_passphrase);
+int MyCBCDecrypt(AES256_ctx *ctx, const unsigned char iv[AES_BLOCKSIZE], const unsigned char* data, int size, bool pad, unsigned char* out);
+bool custom_sha256_for_libbase58(void *digest, const void *data, size_t datasz);
 /*
   the padding must by constant and NOT NEED TO BE CHANGE
 */
@@ -63,28 +70,34 @@ int NTHREADS = 3;
 int RANDOMLEN = 65536;
 int RANDOMLENFOR = 65504;
 int STATUS = 0;
-int QUIET = 0;
+int QUIET = 1;
 int RANDOMSOURCE = 0;
 int CPUMODE;
 int CRACKMODE = 0;
 
 const char *commands1[8] = {"start","pause","continue","stats","exit","about","help","version"};
+const char *commands2[3] = {"extractmkey","doublesha256","privatekeytowif"};
 const char *commands3[3] = {"load","set","try"};
+const char *commands4[2] = {"keyderivation","aesdecrypt"};
 const char *params_set[6] = {"threads","randombuffer","debugcount","quiet","randomsource","crackmode"};
 const char *params_load[3] = {"ckey","mkey","file"};
 
 List ckeys_list;
 
 int main()  {
-  FILE *input;
+  AES256_ctx ctx;
+  FILE *input,*temp_file;
   Tokenizer t;
   pthread_t timerid;
-  char *temp,*token,*aux,*line;
-  //signal(SIGINT, intHandler);
+  char *derivation_n,*passphrase,*salt_bin,*devivedkey,*decrypt_iv,*decrypt_key,*decrypt_enc,*decrypt_raw_dec,*decrypt_raw_iv,*decrypt_raw_key,*decrypt_raw_enc,*pubkey,*pubkeyhash;
+  char *temp,*token,*aux,*line,*mkey_data,*mkey_salt,mkey_str[4],*temp_hex,*privatekey,*privatekey_encoded,*privatekey_hash;
   int *tothread = NULL;
+  long unsigned int privatekey_encoded_size;
   uint64_t total;
-  int i,s,salir,param;
+  uint32_t mkey_nderivations,mkey_offset,local_sec,len_temp;
+  int i,s,salir,param,_continue;
   int AES_ENABLED = check_for_aes_instructions();
+  b58_sha256_impl = custom_sha256_for_libbase58;
   if (AES_ENABLED != 1){
     printf("No Intel AESni enabled, fall back to legacy mode\n");
     CPUMODE = CPUMODE_LEGACY;
@@ -101,156 +114,325 @@ int main()  {
 
   printf("Developed by AlbertoBSD. I wish you very good luck!!\n");
   do {
-	if(input == stdin)	{
-		printf("crackBTC > ");
-	}
-	else	{
-		if(feof(input))	{
-			fclose(input);
-			printf("crackBTC > ");
-			input = stdin;
-		}
-	}
+  	if(input == stdin)	{
+  		printf("crackBTC > ");
+  	}
+  	else	{
+  		if(feof(input))	{
+  			fclose(input);
+  			printf("crackBTC > ");
+  			input = stdin;
+  		}
+  	}
     temp = fgets(line,1024,input);
     if(temp == line)  {
       stringtokenizer(line,&t);
       switch(t.n)  {
-      /*
-        load ckey <data>
-        load mkey <data>
-        set threads <N>
-        set randombuffer <N>
-        try key <key>
-      */
       case 3:
         token = nextToken(&t);
         switch(indexOf(token,commands3,3))  {
-        case 0://LOAD
-          token = nextToken(&t);
-		  aux = nextToken(&t);
-		  switch(indexOf(token,params_load,3))	{
-			  case 0://ckey
-			  case 1://mkey
-				  if(strlen(aux) == 96)  {
-					if(isValidHex(aux))  {
-					  temp = (char*) malloc(48);
-					  hexs2bin(aux,(unsigned char*)temp);
-					  addItemList(temp,&ckeys_list);
-					  printf("Adding %s to the list\n",aux);
-					}
-					else  {
-					  printf("Invalid hex string :%s\n",aux);
-					}
-				  }
-				  else  {
-					printf("Invalid length\n");
-				  }
-			  break;
-			  case 2://file
-				input = fopen(aux,"rb");
-				if(input == NULL)	{
-					printf("Could not load the %s file\n",aux);
-					input = stdin;
-				}
-				else	{
-					printf("loading %s\n",aux);
-				}
-			  break;
-			  default:
-				printf("Unknow value %s\n",token);
-			  break;
-		  }
-
-        break;
-        case 1://SET
-          token = nextToken(&t);
-          aux = nextToken(&t);
-          param = strtol(aux,NULL,10);
-          switch(indexOf(token,params_set,6))  {
-    			  case 0: //threads
-    				if(param > 0 && param <= 64) {  /* Can anyone need more than 64 threads?*/
-    				  NTHREADS = param;
-    				}else  {
-    				  printf("Invalid threads number\n");
-    				}
-    			  break;
-    			  case 1: //randombuffer
-    				if(param > 31 && param < 1024*1024) {
-    				  RANDOMLEN = param;
-    				  RANDOMLENFOR = param - 32;
-    				}else  {
-    				  printf("Invalid bufferlengt number\n");
-    				}
-    			  break;
-    			  case 2: //debugcount
-    				if(param > 0) {
-    				  DEBUGCOUNT = param;
-    				}else  {
-    				  printf("Invalid bufferlengt number\n");
-    				}
-    			  break;
-    			  case 3: //QUIET
-    				  QUIET = param;
-    			  break;
-    			  case 4: //Random Source
-    				  RANDOMSOURCE = param;
-    			  break;
-            case 5: //CRACKMODE
-              if(strcmp(aux,"random") == 0)  {
-                CRACKMODE = CRACKMODE_RANDOM;
-                printf("Setting mode %s\n",aux);
-              }
-              if(strcmp(aux,"mixed") == 0) {
-                CRACKMODE = CRACKMODE_MIXED;
-                printf("Setting mode %s\n",aux);
-              }
-              if(strcmp(aux,"mixed16") == 0) {
-                CRACKMODE = CRACKMODE_MIXED16;
-                printf("Setting mode %s\n",aux);
-              }
-            break;
-    			  default:
-    				    printf("Unknow value %s\n",token);
-    			  break;
-          }
-        break;
-          case 2: //TRY
+          case 0://LOAD
+            token = nextToken(&t);
+      		  aux = nextToken(&t);
+      		  switch(indexOf(token,params_load,3))	{
+      			  case 0://ckey
+      			  case 1://mkey
+      				  if(strlen(aux) == 96)  {
+        					if(isValidHex(aux))  {
+        					  temp = (char*) malloc(48);
+        					  hexs2bin(aux,(unsigned char*)temp);
+        					  addItemList(temp,&ckeys_list);
+        					  printf("Adding %s to the list\n",aux);
+        					}
+        					else  {
+        					  printf("Invalid hex string :%s\n",aux);
+        					}
+      				  }
+      				  else  {
+                  printf("Invalid length\n");
+      				  }
+      			  break;
+      			  case 2://file
+        				input = fopen(aux,"rb");
+        				if(input == NULL)	{
+        					printf("Could not load the %s file\n",aux);
+        					input = stdin;
+        				}
+        				else	{
+        					printf("loading %s\n",aux);
+        				}
+      			  break;
+      			  default:
+        				printf("Unknow value %s\n",token);
+      			  break;
+      		  }
+          break;
+          case 1://SET
             token = nextToken(&t);
             aux = nextToken(&t);
-            if(strlen(aux) == 64)  {
-        			if(isValidHex(aux))  {
-        			  temp = (char*) malloc(32);
-        			  hexs2bin(aux,(unsigned char*)temp);
-                switch(CPUMODE) {
-                  case CPUMODE_AESNI:
-                    tryKey(temp);
-                  break;
-                  case CPUMODE_LEGACY:
-                    tryKey_legacy(temp);
-                  break;
+            param = strtol(aux,NULL,10);
+            switch(indexOf(token,params_set,6))  {
+      			  case 0: //threads
+      				if(param > 0 && param <= 64) {  /* Can anyone need more than 64 threads?*/
+      				  NTHREADS = param;
+      				}else  {
+      				  printf("Invalid threads number\n");
+      				}
+      			  break;
+      			  case 1: //randombuffer
+      				if(param > 31 && param < 1024*1024) {
+      				  RANDOMLEN = param;
+      				  RANDOMLENFOR = param - 32;
+      				}else  {
+      				  printf("Invalid bufferlengt number\n");
+      				}
+      			  break;
+      			  case 2: //debugcount
+      				if(param > 0) {
+      				  DEBUGCOUNT = param;
+      				}else  {
+      				  printf("Invalid bufferlengt number\n");
+      				}
+      			  break;
+      			  case 3: //QUIET
+      				  QUIET = param;
+      			  break;
+      			  case 4: //Random Source
+      				  RANDOMSOURCE = param;
+      			  break;
+              case 5: //CRACKMODE
+                if(strcmp(aux,"random") == 0)  {
+                  CRACKMODE = CRACKMODE_RANDOM;
+                  printf("Setting mode %s\n",aux);
                 }
-        			  free(temp);
-        			}
-        			else  {
-        			  printf("Invalid hex string :%s\n",aux);
-        			}
+                if(strcmp(aux,"mixed") == 0) {
+                  CRACKMODE = CRACKMODE_MIXED;
+                  printf("Setting mode %s\n",aux);
+                }
+                if(strcmp(aux,"mixed16") == 0) {
+                  CRACKMODE = CRACKMODE_MIXED16;
+                  printf("Setting mode %s\n",aux);
+                }
+              break;
+      			  default:
+      				    printf("Unknow value %s\n",token);
+      			  break;
+            }
+          break;
+            case 2: //TRY
+              token = nextToken(&t);
+              aux = nextToken(&t);
+              if(strlen(aux) == 64)  {
+          			if(isValidHex(aux))  {
+          			  temp = (char*) malloc(32);
+          			  hexs2bin(aux,(unsigned char*)temp);
+                  switch(CPUMODE) {
+                    case CPUMODE_AESNI:
+                      tryKey(temp);
+                    break;
+                    case CPUMODE_LEGACY:
+                      tryKey_legacy(temp);
+                    break;
+                  }
+          			  free(temp);
+          			}
+          			else  {
+          			  printf("Invalid hex string :%s\n",aux);
+          			}
+              }
+              else  {
+                  printf("Invalid length\n");
+              }
+            break;
+            default:
+              printf("Unknow command %s\n",token);
+            break;
+          }
+      break;
+      case 2:
+
+        aux = nextToken(&t);
+        //printf("%s\n",aux);
+        token = nextToken(&t);
+        switch(indexOf(aux,commands2,3))  {
+          case 0: //extractmkey
+            temp_file = fopen(token,"rb");
+            if(temp_file != NULL) {
+              _continue = 1;
+              mkey_offset = 0;
+              i = 0;
+              while(fread(mkey_str,1,4,temp_file) == 4 && !feof(temp_file) && _continue )	{
+                if(strncmp(mkey_str,"mkey",4) == 0 )	{
+                  mkey_offset = i;
+                  printf("mkey was found @  0x%x\n",mkey_offset);
+                  _continue = 0;
+                }
+                i++;
+                fseek(temp_file,i,SEEK_SET);
+              }
+              if(mkey_offset != 0) {  // mkey found
+                mkey_data = malloc(48);
+                mkey_salt = malloc(8);
+                fseek(temp_file,mkey_offset -72,SEEK_SET);
+                fread(mkey_data,1,48,temp_file);
+                temp_hex = tohex(mkey_data,48);
+                printf("mkey: %s\n",temp_hex);
+                free(temp_hex);
+
+                fseek(temp_file,mkey_offset -23,SEEK_SET);
+                fread(mkey_salt,1,8,temp_file);
+                temp_hex = tohex(mkey_salt,8);
+                printf("salt: %s\n",temp_hex);
+                free(temp_hex);
+
+                fseek(temp_file,mkey_offset -11,SEEK_SET);
+                fread(&mkey_nderivations,4,1,temp_file);
+                printf("nDerivations: %u\n",mkey_nderivations);
+                free(mkey_salt);
+                free(mkey_data);
+              }
+              else{
+                printf("There is no mkey string in the file\n");
+              }
+              fclose(temp_file);
             }
             else  {
-                printf("Invalid length\n");
+              printf("Could not open file %s\n",token);
+            }
+          break; //End extracmkey
+          case 1: //doublesha256
+            len_temp = strlen(token);
+            pubkey = malloc((int)(len_temp/2));
+            pubkeyhash = malloc(32);
+            hexs2bin(token,(unsigned char *)pubkey);
+            sha256(pubkey,(int)(len_temp/2),pubkeyhash);
+            sha256(pubkeyhash,32,pubkeyhash);
+            temp_hex = tohex(pubkeyhash,32);
+            printf("double sha256: %s\n",temp_hex);
+            free(temp_hex);
+            free(pubkeyhash);
+            free(pubkey);
+          break;  //End doublesha256
+          case 2: //privatekeytowif
+            len_temp = strlen(token);
+            if(len_temp == 64)  {
+              privatekey = malloc(1+32+5);
+              privatekey_hash = malloc(32);
+              privatekey_encoded = malloc(100);
+              privatekey_encoded_size = 100;
+              privatekey[0] = 0x80;
+              hexs2bin(token,(unsigned char*)(privatekey+1));
+              sha256(privatekey,33,privatekey_hash);
+              sha256(privatekey_hash,32,privatekey_hash);
+              memcpy(privatekey+33,privatekey_hash,4);  //Checksum
+              if(b58enc(privatekey_encoded,&privatekey_encoded_size,privatekey,37)) {
+                printf("Private KEY uncompressed %s\n",privatekey_encoded);
+                memset(privatekey_encoded,0,privatekey_encoded_size);
+              }
+              else  {
+                printf("Error: b58enc\n");
+              }
+
+              privatekey_encoded_size = 100;
+              privatekey[33] = 0x01;    //Uncompressed
+              sha256(privatekey,34,privatekey_hash);
+              sha256(privatekey_hash,32,privatekey_hash);
+              memcpy(privatekey+34,privatekey_hash,4);  //Checksum
+              if(b58enc(privatekey_encoded,&privatekey_encoded_size,privatekey,38)) {
+                printf("Private KEY compressed %s\n",privatekey_encoded);
+              }
+              else  {
+                printf("Error: b58enc\n");
+              }
+              free(privatekey);
+              free(privatekey_encoded);
+              free(privatekey_hash);
+            }
+            else  {
+              printf("The privkey doesn't have a valid length\n");
+            }
+          break;// End privatekeytowif
+        }
+      break; // End2 commands3
+      case 4:
+        token = nextToken(&t);
+        switch(indexOf(token,commands4,2))  {
+          case 0: //Keyderivation
+            derivation_n = nextToken(&t);
+            mkey_salt = nextToken(&t);
+            passphrase = nextToken(&t);
+            printf("derivation_n: %s\n",derivation_n);
+            printf("mkey_salt: %s\n",mkey_salt);
+            printf("passphrase: %s\n",passphrase);
+            mkey_nderivations = (int)strtol(derivation_n,NULL,10);
+            if(mkey_nderivations >= 25000) {
+              salt_bin = malloc(8);
+              hexs2bin(mkey_salt,(unsigned char *)salt_bin);
+              devivedkey = BytesToKeySHA512AES(salt_bin,passphrase,mkey_nderivations,strlen(passphrase));
+              if(devivedkey != NULL) {
+                temp_hex = tohex(devivedkey,64);
+                printf("sha512: %s\n",temp_hex);
+                free(temp_hex);
+
+                temp_hex = tohex(devivedkey,32);
+                printf("Key: %s\n",temp_hex);
+                free(temp_hex);
+
+                temp_hex = tohex(devivedkey+32,16);
+                printf("IV: %s\n",temp_hex);
+                free(temp_hex);
+
+                free(devivedkey);
+              }
+              else  {
+                printf("Error: BytesToKeySHA512AES\n");
+              }
+              free(salt_bin);
+            }
+            else  {
+              printf("nderivations cannot be less than 25000\n");
             }
           break;
-          default:
-            printf("Unknow command %s\n",token);
+          case 1: //Aesdecrypt
+            decrypt_iv = nextToken(&t);
+            decrypt_key = nextToken(&t);
+            decrypt_enc = nextToken(&t);
+
+            printf("decrypt_iv %s\n",decrypt_iv);
+            printf("decrypt_key %s\n",decrypt_key);
+            printf("decrypt_enc %s\n",decrypt_enc);
+
+            len_temp = strlen(decrypt_enc);
+            if(strlen(decrypt_key) == 64 && strlen(decrypt_iv) == 32 && len_temp % 16 == 0) {
+              decrypt_raw_iv = malloc(16);
+              decrypt_raw_key = malloc(32);
+              decrypt_raw_enc = malloc((int)(len_temp/2));
+              decrypt_raw_dec = malloc((int)(len_temp/2));
+              printf("len: %i\n",(int)(len_temp/2));
+
+              hexs2bin(decrypt_iv,(unsigned char *)decrypt_raw_iv);
+              hexs2bin(decrypt_key,(unsigned char *)decrypt_raw_key);
+              hexs2bin(decrypt_enc,(unsigned char *)decrypt_raw_enc);
+              AES256_init(&ctx,( const unsigned char*)decrypt_raw_key);
+              MyCBCDecrypt(&ctx,(const unsigned char*)decrypt_raw_iv,(const unsigned char*)decrypt_raw_enc,(int)(len_temp/2),true,(unsigned char*)decrypt_raw_dec);
+
+              temp_hex = tohex(decrypt_raw_dec,(int)(len_temp/2));
+              printf("Decrypted: %s\n",temp_hex);
+              free(temp_hex);
+
+
+
+              free(decrypt_raw_iv);
+              free(decrypt_raw_key);
+              free(decrypt_raw_enc);
+              free(decrypt_raw_dec);
+            }
+            else  {
+              printf("some input values doesn't have the correct length\n");
+            }
           break;
         }
-        break;
-      /*
-        start
-        pause
-        continue
-        stats
-        exit
-      */
+      break;
       case 1:
         token = nextToken(&t);
         switch(indexOf(token,commands1,8))  {
@@ -316,7 +498,7 @@ int main()  {
         break;
         case 1:  //pause
         break;
-        case 2: //continue
+        case 2: //_continue
         break;
         case 3:  //stats
           if(STATUS == 1)  {
@@ -324,7 +506,9 @@ int main()  {
       			for(i = 0; i < NTHREADS;i++)	{
       				total += (uint64_t)((uint64_t)steps[i] * (uint64_t)DEBUGCOUNT);
       			}
-            printf("AES256 block operations %.0f/s\n",(double) ((uint64_t)total/seconds));
+            local_sec = seconds;
+            printf("AES256 block operations %.0f/s\n",(double) ((uint64_t)total/local_sec));
+            printf("Total op %lu, seconds %u\n",total,local_sec);
           }
           else  {
             printf("The program is NOT running\n");
@@ -337,6 +521,7 @@ int main()  {
           printf("Developed by AlbertoBSD\nTwitter: @albertobsd\nDonate BTC: 1H3TAVNZFZfiLUp9o9E93oTVY9WgYZ5knX\n");
         break;
         case 6:  //help
+          printusage();
         break;
         case 7:  //version
           printf("Version: %s\n",version);
@@ -353,8 +538,10 @@ int main()  {
     }
     freetokenizer(&t);
   }while(!found && !salir );
-  if(STATUS == 1)
+  if(STATUS == 1) {
     fclose(devurandom);
+  }
+  return 0;
 }
 
 void *thread_timer(void *vargp)  {
@@ -375,7 +562,7 @@ void *thread_process(void *vargp)  {
   uint64_t count;
   FILE *file_output;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j;
+  int thread_number,_continue,i,j;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp;
   thread_number = aux[0];
 
@@ -390,13 +577,13 @@ void *thread_process(void *vargp)  {
 
   steps[thread_number] = 0;
   count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
-  entrar = 1;
+  _continue = 1;
   do{
     pthread_mutex_lock(&read_random);
     fread(random_buffer,1,RANDOMLEN,devurandom);
 
     pthread_mutex_unlock(&read_random);
-    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && _continue ; i++)  {
 
       key_material = random_buffer+i;
 	  /*
@@ -434,7 +621,6 @@ void *thread_process(void *vargp)  {
         aesData.iv = (unsigned char *)ckeys_list.data[j]+16;    //C2
         // For CBC the previous cipher block is our IV except for the C1 Block in this case the IV is the Orignal IV,
 
-
         imyDec256_CBC(&aesData);  //Custom function dont use this for more than one Cipher block
 
         if(memcmp(decipher_key,padding,16) == 0 )  {
@@ -449,14 +635,14 @@ void *thread_process(void *vargp)  {
           free(temp);
           fclose(file_output);
           found = 1;
-          entrar = 0;
+          _continue = 0;
         }
 
         count++;
       }
 
     }  //end While
-  }while(entrar);
+  }while(_continue);
   free(decipher_key);
   pthread_exit(NULL);
 }
@@ -523,7 +709,7 @@ void *thread_process_legacy(void *vargp)  {
   uint64_t count;
   FILE *file_output;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j,k;
+  int thread_number,_continue,i,j,k;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp,*iv;
   thread_number = aux[0];
 
@@ -532,13 +718,13 @@ void *thread_process_legacy(void *vargp)  {
 
   steps[thread_number] = 0;
   count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
-  entrar = 1;
+  _continue = 1;
   do{
     pthread_mutex_lock(&read_random);
     fread(random_buffer,1,RANDOMLEN,devurandom);
     pthread_mutex_unlock(&read_random);
 
-    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && _continue ; i++)  {
 
       key_material = random_buffer+i;
 	     /*
@@ -574,12 +760,12 @@ void *thread_process_legacy(void *vargp)  {
           free(temp);
           fclose(file_output);
           found = 1;
-          entrar = 0;
+          _continue = 0;
         }
         count++;
       }
     }  //end While
-  }while(entrar);
+  }while(_continue);
   free(decipher_key);
   pthread_exit(NULL);
 }
@@ -596,7 +782,7 @@ void *thread_process_mixed(void *vargp)  {
   INT256 my256int;
   FILE *file_output,*file_log32;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j,k;
+  int thread_number,_continue,i,j;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp;
   thread_number = aux[0];
 
@@ -611,13 +797,13 @@ void *thread_process_mixed(void *vargp)  {
 
   steps[thread_number] = 0;
   count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
-  entrar = 1;
+  _continue = 1;
   do{
     pthread_mutex_lock(&read_random);
     fread(random_buffer,1,RANDOMLEN,devurandom);
 
     pthread_mutex_unlock(&read_random);
-    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && _continue ; i++)  {
       key_material = random_buffer+i;
 
       //for(k = 0; k < 8 ;  k++)  {
@@ -638,28 +824,9 @@ void *thread_process_mixed(void *vargp)  {
       		  }
 
           }
-          /*
-          We have a three cipher blocks : C = [C0, C1, C2]
-          We only need decrypt the last block of cipher text, in this case is C2
-          The IV in this case is the previous block, in this case is C1
-
-          Decipher text should be equals to padding [0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10] if not, the key tested is incorrect
-
-           C1 is from 0 to 15
-           C2 is from 16 to 31
-           C3 is from 31 to 47
-
-           We only do one single block Decrypt per Mkey or Ckey instead of 3 decrypts, this save a lot of CPU power
-          */
-
-
           aesData.in_block = (unsigned char *)ckeys_list.data[j]+32;  //C3
           aesData.iv = (unsigned char *)ckeys_list.data[j]+16;    //C2
-          // For CBC the previous cipher block is our IV except for the C1 Block in this case the IV is the Orignal IV,
-
-
           imyDec256_CBC(&aesData);  //Custom function dont use this for more than one Cipher block
-
           if(memcmp(decipher_key,padding,16) == 0 )  {
             printf("Posible Key found\n");
             file_output = fopen("./key_found.txt","wb");
@@ -672,12 +839,12 @@ void *thread_process_mixed(void *vargp)  {
             free(temp);
             fclose(file_output);
             found = 1;
-            entrar = 0;
+            _continue = 0;
           }
           count++;
         }
         my256int.number32[0]++;
-      }while(my256int.number32[0] != 0 && entrar);
+      }while(my256int.number32[0] != 0 && _continue);
       pthread_mutex_lock(&write_mixed32);
       file_log32 = fopen("tested32.bin","ab+");
       if(file_log32 != NULL)  {
@@ -686,7 +853,7 @@ void *thread_process_mixed(void *vargp)  {
       }
       pthread_mutex_unlock(&write_mixed32);
     }  //end While
-  }while(entrar);
+  }while(_continue);
   free(decipher_key);
   pthread_exit(NULL);
 }
@@ -698,7 +865,7 @@ void *thread_process_legacy_mixed(void *vargp)  {
   INT256 my256int;
   FILE *file_output;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j,k;
+  int thread_number,_continue,i,j,k;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp,*iv;
   thread_number = aux[0];
 
@@ -707,13 +874,13 @@ void *thread_process_legacy_mixed(void *vargp)  {
 
   steps[thread_number] = 0;
   count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
-  entrar = 1;
+  _continue = 1;
   do{
     pthread_mutex_lock(&read_random);
     fread(random_buffer,1,RANDOMLEN,devurandom);
     pthread_mutex_unlock(&read_random);
 
-    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && _continue ; i++)  {
 
       key_material = random_buffer+i;
       memcpy(my256int.lineal,key_material,32);
@@ -754,14 +921,14 @@ void *thread_process_legacy_mixed(void *vargp)  {
             free(temp);
             fclose(file_output);
             found = 1;
-            entrar = 0;
+            _continue = 0;
           }
           count++;
         }
         my256int.number32[0]++;
-      }while( my256int.number32[0] != 0 && entrar);
+      }while( my256int.number32[0] != 0 && _continue);
     }  //end While
-  }while(entrar);
+  }while(_continue);
   free(decipher_key);
   pthread_exit(NULL);
 }
@@ -785,7 +952,7 @@ void *thread_process_mixed16(void *vargp)  {
   INT256 my256int;
   FILE *file_output,*file_log16;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j,k;
+  int thread_number,_continue,i,j,k;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp;
   thread_number = aux[0];
 
@@ -800,15 +967,15 @@ void *thread_process_mixed16(void *vargp)  {
 
   steps[thread_number] = 0;
   count = 1;  // Just to skip the firts debug output of (0 % 0x100000 == 0)  is true
-  entrar = 1;
+  _continue = 1;
   do{
     pthread_mutex_lock(&read_random);
     fread(random_buffer,1,RANDOMLEN,devurandom);
 
     pthread_mutex_unlock(&read_random);
-    for(i = 0; i < RANDOMLENFOR && entrar ; i++)  {
+    for(i = 0; i < RANDOMLENFOR && _continue ; i++)  {
       key_material = random_buffer+i;
-      for(k = 0; k < 16 && entrar;k++) {
+      for(k = 0; k < 16 && _continue;k++) {
         memcpy(my256int.lineal,key_material,32);
         my256int.number16[k] = 0;
         do {
@@ -860,12 +1027,12 @@ void *thread_process_mixed16(void *vargp)  {
               free(temp);
               fclose(file_output);
               found = 1;
-              entrar = 0;
+              _continue = 0;
             }
             count++;
           }
           my256int.number16[k]++;
-        }while(my256int.number16[k] != 0 && entrar);
+        }while(my256int.number16[k] != 0 && _continue);
         pthread_mutex_lock(&write_mixed16);
         file_log16 = fopen("tested16.bin","ab+");
         if(file_log16 != NULL)  {
@@ -874,9 +1041,80 @@ void *thread_process_mixed16(void *vargp)  {
         }
         pthread_mutex_unlock(&write_mixed16);
       }
-
     }  //end While
-  }while(entrar);
+  }while(_continue);
   free(decipher_key);
   pthread_exit(NULL);
+}
+
+void printusage() {
+  printf("Usage:\n");
+  printf("load ckey <hexstring 96 bytes length of the CKEY>\n\tThis load a CryptedKey for cracking\n");
+  printf("load mkey <hexstring 96 bytes length of the MKEY>\n\tThis load a MasterKey for cracking\n");
+  printf("set threads <N>\n\tThis set the number of threads default 3, this number must be in the range of [1,64]\n");
+  printf("set debugcount <N>\n\tThis set the number of debugcount default 0x100000, the debug output only show output every debugcount\n");
+  printf("set quiet <0 or 1>\n\tThis turn off or on the debug output of the current key\n");
+  printf("set crackmode <random or mixed>\n\tThis set the behaivor of the crack mode, default random\n");
+  printf("start\n\tThis start N threads\n");
+  printf("exit\n\tThis end the program\n");
+  printf("stats\n\tShow the current stats\n");
+  printf("version\n\tprint the current version\n");
+  printf("about\n\tprint the developer information\n\n");
+}
+
+char *BytesToKeySHA512AES(char *salt,  char *passphrase,int count, int length_passphrase)	{
+	int i = 0;
+	char *buffer = NULL;
+  SHA512_State ctx;
+	if(!count)
+		return NULL;
+
+	buffer = ( char *) malloc(64);
+  if(buffer != NULL){
+    SHA512_Init(&ctx);
+  	SHA512_Bytes(&ctx,passphrase,length_passphrase);
+    SHA512_Bytes(&ctx,salt,8);
+  	SHA512_Final(&ctx,(unsigned char *)buffer);
+  	i = 0;
+  	count--;
+  	while(i != count)	{
+      SHA512_Simple((unsigned char *)buffer,64,(unsigned char *)buffer);
+  		i++;
+  	}
+  }
+  return buffer;
+}
+
+
+int MyCBCDecrypt(AES256_ctx *ctx, const unsigned char iv[AES_BLOCKSIZE], const unsigned char* data, int size, bool pad, unsigned char* out) {
+  int written = 0;
+  bool fail = false;
+  const unsigned char* prev = iv;
+  if (!data || !size || !out)
+      return 0;
+  if (size % AES_BLOCKSIZE != 0)
+      return 0;
+  while (written != size) {
+	AES256_decrypt(ctx, 1, out, data + written);
+      for (int i = 0; i != AES_BLOCKSIZE; i++)
+          *out++ ^= prev[i];
+      prev = data + written;
+      written += AES_BLOCKSIZE;
+  }
+
+  if (pad) {
+      unsigned char padsize = *--out;
+      fail = !padsize | (padsize > AES_BLOCKSIZE);
+      padsize *= !fail;
+      for (int i = AES_BLOCKSIZE; i != 0; i--)
+          fail |= ((i > AES_BLOCKSIZE - padsize) & (*out-- != padsize));
+      written -= padsize;
+  }
+  return written * !fail;
+}
+
+
+bool custom_sha256_for_libbase58(void *digest, const void *data, size_t datasz) {
+  sha256(data,datasz,digest);
+  return true;
 }

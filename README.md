@@ -21,7 +21,14 @@ Today I can test around 100 Millions AES keys per second with Intel AESni instru
 
 ## How to use
 
-first compile
+first compile, to do it you need yasm.
+
+```
+sudo apt install yasm
+```
+
+after that only use make
+
 
 ```
 make

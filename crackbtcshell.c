@@ -49,7 +49,7 @@ bool custom_sha256_for_libbase58(void *digest, const void *data, size_t datasz);
   the padding must by constant and NOT NEED TO BE CHANGE
 */
 const unsigned char *padding = (const unsigned char *)"\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10";
-const char *version = "0.1.20201203";
+const char *version = "0.1.20211228";
 
 /*Global Values*/
 
@@ -625,7 +625,7 @@ void *thread_process(void *vargp)  {
 
         if(memcmp(decipher_key,padding,16) == 0 )  {
           printf("Posible Key found\n");
-          file_output = fopen("./key_found.txt","wb");
+          file_output = fopen("./key_found.txt","a+b");
           temp = tohex(key_material,32);
           printf("Thread %i key_material: %s\n",thread_number,temp);
           fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
@@ -750,7 +750,7 @@ void *thread_process_legacy(void *vargp)  {
 
         if(memcmp(decipher_key,padding,16) == 0 )  {
           printf("Posible Key found\n");
-          file_output = fopen("./key_found.txt","wb");
+          file_output = fopen("./key_found.txt","a+b");
           temp = tohex(key_material,32);
           printf("Thread %i key_material: %s\n",thread_number,temp);
           fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
@@ -829,7 +829,7 @@ void *thread_process_mixed(void *vargp)  {
           imyDec256_CBC(&aesData);  //Custom function dont use this for more than one Cipher block
           if(memcmp(decipher_key,padding,16) == 0 )  {
             printf("Posible Key found\n");
-            file_output = fopen("./key_found.txt","wb");
+            file_output = fopen("./key_found.txt","a+b");
             temp = tohex(key_material,32);
             printf("Thread %i key_material: %s\n",thread_number,temp);
             fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
@@ -863,7 +863,7 @@ void *thread_process_legacy_mixed(void *vargp)  {
   AES256_ctx ctx;
   uint64_t count;
   INT256 my256int;
-  FILE *file_output;
+  FILE *file_output,*file_log32;
   int *aux = (int *)vargp;
   int thread_number,_continue,i,j,k;
   char *decipher_key = NULL,*key_material,*random_buffer,*temp,*iv;
@@ -911,7 +911,7 @@ void *thread_process_legacy_mixed(void *vargp)  {
 
           if(memcmp(decipher_key,padding,16) == 0 )  {
             printf("Posible Key found\n");
-            file_output = fopen("./key_found.txt","wb");
+            file_output = fopen("./key_found.txt","a+b");
             temp = tohex(key_material,32);
             printf("Thread %i key_material: %s\n",thread_number,temp);
             fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
@@ -927,6 +927,13 @@ void *thread_process_legacy_mixed(void *vargp)  {
         }
         my256int.number32[0]++;
       }while( my256int.number32[0] != 0 && _continue);
+      pthread_mutex_lock(&write_mixed32);
+      file_log32 = fopen("tested32.bin","ab+");
+      if(file_log32 != NULL)  {
+        fwrite(my256int.lineal,1,32,file_log32);
+        fclose(file_log32);
+      }
+      pthread_mutex_unlock(&write_mixed32);
     }  //end While
   }while(_continue);
   free(decipher_key);
@@ -1017,7 +1024,7 @@ void *thread_process_mixed16(void *vargp)  {
 
             if(memcmp(decipher_key,padding,16) == 0 )  {
               printf("Posible Key found\n");
-              file_output = fopen("./key_found.txt","wb");
+              file_output = fopen("./key_found.txt","a+b");
               temp = tohex(key_material,32);
               printf("Thread %i key_material: %s\n",thread_number,temp);
               fprintf(file_output,"Thread %i key_material: %s\n",thread_number,temp);
@@ -1101,7 +1108,6 @@ int MyCBCDecrypt(AES256_ctx *ctx, const unsigned char iv[AES_BLOCKSIZE], const u
       prev = data + written;
       written += AES_BLOCKSIZE;
   }
-
   if (pad) {
       unsigned char padsize = *--out;
       fail = !padsize | (padsize > AES_BLOCKSIZE);
@@ -1112,7 +1118,6 @@ int MyCBCDecrypt(AES256_ctx *ctx, const unsigned char iv[AES_BLOCKSIZE], const u
   }
   return written * !fail;
 }
-
 
 bool custom_sha256_for_libbase58(void *digest, const void *data, size_t datasz) {
   sha256(data,datasz,digest);

@@ -35,7 +35,7 @@ void *thread_process_legacy(void *vargp);
 void *thread_process_legacy_mixed(void *vargp);
 void *thread_process(void *vargp);
 void *thread_process_mixed(void *vargp);
-void *thread_process_mixed16(void *vargp);
+//void *thread_process_mixed16(void *vargp);
 void *thread_timer(void *vargp);
 
 void tryKey(char *key);
@@ -49,7 +49,7 @@ bool custom_sha256_for_libbase58(void *digest, const void *data, size_t datasz);
   the padding must by constant and NOT NEED TO BE CHANGE
 */
 const unsigned char *padding = (const unsigned char *)"\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10";
-const char *version = "0.1.20210102";
+const char *version = "0.1.20210204";
 
 /*Global Values*/
 

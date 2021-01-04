@@ -1,3 +1,4 @@
+*.o
 *.dat
 ctaes.cu
 *.txt
@@ -14,8 +15,5 @@ ecdsa_gmp_rango.c
 gmp_clean.c
 gmp_original.c
 keyhunt.c
-rmd160.c
-rmd160.h
-rmd160.ols
 test_args.c
 

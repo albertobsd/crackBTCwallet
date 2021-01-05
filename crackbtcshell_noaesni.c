@@ -26,7 +26,7 @@ void tryKey_legacy(char *key);
   the padding must by constant and NOT NEED TO BE CHANGE
 */
 const unsigned char *padding = (const unsigned char *)"\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10";
-const char *version = "0.1.20211123";
+const char *version = "0.1.20210204";
 
 /*Global Values*/
 
@@ -53,18 +53,21 @@ const char *params_set[5] = {"threads","randombuffer","debugcount","quiet","rand
 const char *params_load[3] = {"ckey","mkey","file"};
 
 List ckeys_list;
+List expected_block;
 
 int main()  {
   FILE *input;
   Tokenizer t;
   pthread_t timerid;
+  char *expected_aes_block;
   char *temp,*token,*aux,*line;
   //signal(SIGINT, intHandler);
   int *tothread = NULL;
   uint64_t total;
-  int i,s,salir,param;
+  int i,j,s,salir,param;
 
   memset(&ckeys_list,0,sizeof(List));
+  memset(&expected_block,0,sizeof(List));
   seconds = 0;
   line = malloc(1024);
   salir = 0;
@@ -104,10 +107,26 @@ int main()  {
 			  case 1://mkey
 				  if(strlen(aux) == 96)  {
 					if(isValidHex(aux))  {
-					  temp = (char*) malloc(48);
-					  hexs2bin(aux,(unsigned char*)temp);
-					  addItemList(temp,&ckeys_list);
-					  printf("Adding %s to the list\n",aux);
+            temp = (char*) malloc(48);
+            expected_aes_block = (char*) malloc(16);
+            if(expected_aes_block == NULL || temp == NULL)  {
+              fprintf(stderr,"error malloc()\n");
+              exit(0);
+            }
+            hexs2bin(aux,(unsigned char*)temp);
+            addItemList(temp,&ckeys_list);
+            /*
+              expected_aes_block is a precalculate value for the expected aes block Decrypted
+              this Operation save futures XOR for every tried key
+            */
+            for(j = 0; j < 16 ; j++)  {
+              expected_aes_block[j] = temp[16+j] ^ padding[j];
+            }
+            addItemList(expected_aes_block,&expected_block);
+            temp = tohex(expected_aes_block,16);
+            printf("Expected block: %s\n",temp);
+            free(temp);
+            printf("Adding %s to the list\n",aux);
 					}
 					else  {
 					  printf("Invalid hex string :%s\n",aux);
@@ -296,17 +315,17 @@ void *thread_timer(void *vargp)  {
 
 void tryKey_legacy(char *key)  {
   AES256_ctx ctx;
-  int i,j;
-  char *decipher_key = NULL,*temp,*iv;
+  int j;
+  char *decipher_key = NULL,*temp;
   decipher_key = (char *) malloc(16);
+  if(decipher_key == NULL)  {
+    fprintf(stderr,"error malloc()\n");
+    exit(0);
+  }
   AES256_init(&ctx,(const unsigned char*) key);
   for(j = 0; j < ckeys_list.n; j++) {
-  	iv = ckeys_list.data[j]+16;
     AES256_decrypt(&ctx, 1,( unsigned char *) decipher_key,(const unsigned char *) ckeys_list.data[j]+32);
-    for (i = 0; i != AES_BLOCKSIZE; i++)  {
-      decipher_key[i] ^= iv[i];
-    }
-  	if(memcmp(decipher_key,padding,16) == 0 )  {
+  	if(memcmp(decipher_key,expected_block.data[j],16) == 0 )  {
   	  printf("Posible Key found\n");
   	  temp = tohex(key,32);
   	  printf("key_material: %s\n",temp);
@@ -325,8 +344,8 @@ void *thread_process_legacy(void *vargp)  {
   uint64_t count;
   FILE *file_output;
   int *aux = (int *)vargp;
-  int thread_number,entrar,i,j,k;
-  char *decipher_key = NULL,*key_material,*random_buffer,*temp,*iv;
+  int thread_number,entrar,i,j;
+  char *decipher_key = NULL,*key_material,*random_buffer,*temp;
   thread_number = aux[0];
 
   decipher_key = (char *) malloc(16);
@@ -358,13 +377,15 @@ void *thread_process_legacy(void *vargp)  {
     		  }
         }
 
-        iv = ckeys_list.data[j]+16;
+        //iv = ckeys_list.data[j]+16;
         AES256_decrypt(&ctx, 1,( unsigned char *) decipher_key,(const unsigned char *) ckeys_list.data[j]+32);
+        /*
         for (k = 0; k != AES_BLOCKSIZE; k++){
           decipher_key[k] ^= iv[k];
         }
+        */
 
-        if(memcmp(decipher_key,padding,16) == 0 )  {
+        if(memcmp(decipher_key,expected_block.data[j],16) == 0 )  {
           printf("Posible Key found\n");
           file_output = fopen("./key_found.txt","wb");
           temp = tohex(key_material,32);

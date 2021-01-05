@@ -686,6 +686,10 @@ void tryKey(char *key)  {
   int j;
   char *decipher_key = NULL,*key_material,*temp;
   decipher_key = (char *) malloc(48);
+  if(decipher_key == NULL)  {
+    fprintf(stderr,"error malloc()\n");
+    exit(0);
+  }
   aesData.expanded_key = expandedKey;
   aesData.num_blocks = 1;
   aesData.out_block = (unsigned char *)decipher_key;
@@ -693,8 +697,6 @@ void tryKey(char *key)  {
   iDecExpandKey256((unsigned char*)key_material,expandedKey);
   for(j = 0; j < ckeys_list.n; j++){
   	aesData.in_block = (unsigned char *)ckeys_list.data[j]+32;  //C3
-  	//aesData.iv = (unsigned char *)ckeys_list.data[j]+16;    //C2
-  	//imyDec256_CBC(&aesData);
     iDec256(&aesData);
   	if(memcmp(decipher_key,expected_block.data[j],16) == 0 )  {
   	  printf("Posible Key found\n");
@@ -717,15 +719,13 @@ void tryKey_legacy(char *key)  {
   int j;
   char *decipher_key = NULL,*temp;
   decipher_key = (char *) malloc(16);
+  if(decipher_key == NULL)  {
+    fprintf(stderr,"error malloc()\n");
+    exit(0);
+  }
   AES256_init(&ctx,(const unsigned char*) key);
   for(j = 0; j < ckeys_list.n; j++) {
-  	//iv = ckeys_list.data[j]+16;
     AES256_decrypt(&ctx, 1,( unsigned char *) decipher_key,(const unsigned char *) ckeys_list.data[j]+32);
-    /*
-    for (i = 0; i != AES_BLOCKSIZE; i++)  {
-      decipher_key[i] ^= iv[i];
-    }
-    */
   	if(memcmp(decipher_key,expected_block.data[j],16) == 0 )  {
   	  printf("Posible Key found\n");
   	  temp = tohex(key,32);
@@ -738,7 +738,6 @@ void tryKey_legacy(char *key)  {
   }
   free(decipher_key);
 }
-
 
 void *thread_process_legacy(void *vargp)  {
   AES256_ctx ctx;
@@ -1020,7 +1019,6 @@ char *BytesToKeySHA512AES(char *salt,  char *passphrase,int count, int length_pa
   }
   return buffer;
 }
-
 
 int MyCBCDecrypt(AES256_ctx *ctx, const unsigned char iv[AES_BLOCKSIZE], const unsigned char* data, int size, bool pad, unsigned char* out) {
   int written = 0;

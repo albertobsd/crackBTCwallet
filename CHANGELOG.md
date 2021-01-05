@@ -1,6 +1,8 @@
 Version 0.1.20210204
 - Added an extra tool get_mkey_ckey to extract the ckey and mkey from the wallet.dat file
 - Added rmd160 for hash 
+- Added some changes to noaesni version
+- Added some memory checks for malloc returned values
 
 Version 0.1.20210102
 - Added a precalculated value for expected AES Block decrypted.

@@ -72,8 +72,8 @@ int RANDOMLENFOR = 65504;
 int STATUS = 0;
 int QUIET = 1;
 int RANDOMSOURCE = 0;
-int CPUMODE;
 int CRACKMODE = 0;
+int CPUMODE;
 
 const char *commands1[8] = {"start","pause","continue","stats","exit","about","help","version"};
 const char *commands2[3] = {"extractmkey","doublesha256","privatekeytowif"};
@@ -184,34 +184,34 @@ int main()  {
       			  default:
         				printf("Unknow value %s\n",token);
       			  break;
-      		  }
-          break;
+      		  } // End switch switch(indexOf(token,commands3,3))
+          break;  // Break for 3 params commands
           case 1://SET
             token = nextToken(&t);
             aux = nextToken(&t);
             param = strtol(aux,NULL,10);
             switch(indexOf(token,params_set,6))  {
       			  case 0: //threads
-      				if(param > 0 && param <= 64) {  /* Can anyone need more than 64 threads?*/
-      				  NTHREADS = param;
-      				}else  {
-      				  printf("Invalid threads number\n");
-      				}
+        				if(param > 0 && param <= 64) {  /* Can anyone need more than 64 threads?*/
+        				  NTHREADS = param;
+        				}else  {
+        				  printf("Invalid threads number\n");
+        				}
       			  break;
       			  case 1: //randombuffer
-      				if(param > 31 && param < 1024*1024) {
-      				  RANDOMLEN = param;
-      				  RANDOMLENFOR = param - 32;
-      				}else  {
-      				  printf("Invalid bufferlengt number\n");
-      				}
+        				if(param > 31 && param < 1024*1024) {
+        				  RANDOMLEN = param;
+        				  RANDOMLENFOR = param - 32;
+        				}else  {
+        				  printf("Invalid bufferlengt number\n");
+        				}
       			  break;
       			  case 2: //debugcount
-      				if(param > 0) {
-      				  DEBUGCOUNT = param;
-      				}else  {
-      				  printf("Invalid bufferlengt number\n");
-      				}
+        				if(param > 0) {
+        				  DEBUGCOUNT = param;
+        				}else  {
+        				  printf("Invalid bufferlengt number\n");
+        				}
       			  break;
       			  case 3: //QUIET
       				  QUIET = param;
@@ -228,47 +228,41 @@ int main()  {
                   CRACKMODE = CRACKMODE_MIXED;
                   printf("Setting mode %s\n",aux);
                 }
-                /*
-                if(strcmp(aux,"mixed16") == 0) {
-                  CRACKMODE = CRACKMODE_MIXED16;
-                  printf("Setting mode %s\n",aux);
-                }
-                */
               break;
       			  default:
-      				    printf("Unknow value %s\n",token);
+      				  printf("Unknow value %s\n",token);
       			  break;
             }
+          break; // Break for SET
+          case 2: //TRY
+            token = nextToken(&t);
+            aux = nextToken(&t);
+            if(strlen(aux) == 64)  {
+          		if(isValidHex(aux))  {
+          		  temp = (char*) malloc(32);
+          		  hexs2bin(aux,(unsigned char*)temp);
+                switch(CPUMODE) {
+                  case CPUMODE_AESNI:
+                    tryKey(temp);
+                  break;
+                  case CPUMODE_LEGACY:
+                    tryKey_legacy(temp);
+                  break;
+                }
+          		  free(temp);
+          		}
+          		else  {
+          		  printf("Invalid hex string :%s\n",aux);
+          		}
+            }
+            else  {
+                printf("Invalid length\n");
+            }
           break;
-            case 2: //TRY
-              token = nextToken(&t);
-              aux = nextToken(&t);
-              if(strlen(aux) == 64)  {
-          			if(isValidHex(aux))  {
-          			  temp = (char*) malloc(32);
-          			  hexs2bin(aux,(unsigned char*)temp);
-                  switch(CPUMODE) {
-                    case CPUMODE_AESNI:
-                      tryKey(temp);
-                    break;
-                    case CPUMODE_LEGACY:
-                      tryKey_legacy(temp);
-                    break;
-                  }
-          			  free(temp);
-          			}
-          			else  {
-          			  printf("Invalid hex string :%s\n",aux);
-          			}
-              }
-              else  {
-                  printf("Invalid length\n");
-              }
-            break;
-            default:
-              printf("Unknow command %s\n",token);
-            break;
-          }
+          default:
+            printf("Unknow command %s\n",token);
+          break;
+        }
       break;
       case 2:
 
@@ -521,7 +515,7 @@ int main()  {
         break;
         case 1:  //pause
         break;
-        case 2: //_continue
+        case 2: //continue
         break;
         case 3:  //stats
           if(STATUS == 1)  {
@@ -575,6 +569,35 @@ void *thread_timer(void *vargp)  {
   }while(!found);
   pthread_exit(NULL);
 }
+
+/*
+  Same as tryKey but for NO AESni devices
+*/
+void tryKey_legacy(char *key)  {
+  AES256_ctx ctx;
+  int j;
+  char *decipher_key = NULL,*temp;
+  decipher_key = (char *) malloc(16);
+  if(decipher_key == NULL)  {
+    fprintf(stderr,"error malloc()\n");
+    exit(0);
+  }
+  AES256_init(&ctx,(const unsigned char*) key);
+  for(j = 0; j < ckeys_list.n; j++) {
+    AES256_decrypt(&ctx, 1,( unsigned char *) decipher_key,(const unsigned char *) ckeys_list.data[j]+32);
+  	if(memcmp(decipher_key,expected_block.data[j],16) == 0 )  {
+  	  printf("Posible Key found\n");
+  	  temp = tohex(key,32);
+  	  printf("key_material: %s\n",temp);
+  	  free(temp);
+  	  temp = tohex(ckeys_list.data[j],48);
+  	  printf("For ckey or mkey: %s\n",temp);
+  	  free(temp);
+  	}
+  }
+  free(decipher_key);
+}
+
 
 /*
   random crack thread
@@ -711,33 +734,6 @@ void tryKey(char *key)  {
   free(decipher_key);
 }
 
-/*
-  Same as tryKey but for NO AESni devices
-*/
-void tryKey_legacy(char *key)  {
-  AES256_ctx ctx;
-  int j;
-  char *decipher_key = NULL,*temp;
-  decipher_key = (char *) malloc(16);
-  if(decipher_key == NULL)  {
-    fprintf(stderr,"error malloc()\n");
-    exit(0);
-  }
-  AES256_init(&ctx,(const unsigned char*) key);
-  for(j = 0; j < ckeys_list.n; j++) {
-    AES256_decrypt(&ctx, 1,( unsigned char *) decipher_key,(const unsigned char *) ckeys_list.data[j]+32);
-  	if(memcmp(decipher_key,expected_block.data[j],16) == 0 )  {
-  	  printf("Posible Key found\n");
-  	  temp = tohex(key,32);
-  	  printf("key_material: %s\n",temp);
-  	  free(temp);
-  	  temp = tohex(ckeys_list.data[j],48);
-  	  printf("For ckey or mkey: %s\n",temp);
-  	  free(temp);
-  	}
-  }
-  free(decipher_key);
-}
 
 void *thread_process_legacy(void *vargp)  {
   AES256_ctx ctx;

@@ -3,7 +3,7 @@ Version 0.1.20210204
 - Added rmd160 for hash 
 - Added some changes to noaesni version
 - Added some memory checks for malloc returned values
-- Added all the commands to the noaesni version, thanks Liam i hope this changes where useful to you
+- Added all the commands to the noaesni version, thanks Liam i hope this changes were useful to you
 
 Version 0.1.20210102
 - Added a precalculated value for expected AES Block decrypted.
